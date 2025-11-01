@@ -1,0 +1,42 @@
+# This is your main configuration file.
+# Add, edit, or remove groups and links here.
+# The website will reload this file on every page visit.
+
+groups:
+  - title: "Daily News"
+    links:
+      - name: "Hacker News"
+        url: "https://news.ycombinator.com"
+      - name: "TechMeme"
+        url: "https://techmeme.com"
+      - name: "Lobste.rs"
+        url: "https://lobste.rs"
+
+  - title: "Project Phoenix"
+    links:
+      - name: "Jira Board"
+        url: "https://jira.example.com/project-phoenix"
+      - name: "Figma Designs"
+        url: "https://figma.com/file/project-phoenix"
+      - name: "Confluence Docs"
+        url: "https://confluence.example.com/project-phoenix"
+      - name: "GitHub Repo"
+        url: "https://github.com/your-org/project-phoenix"
+
+  - title: "Dev Utilities"
+    links:
+      - name: "Crontab Guru"
+        url: "https://crontab.guru/"
+      - name: "Regex101"
+        url: "https://regex101.com/"
+      - name: "JSON Formatter"
+        url: "https://jsonformatter.curiousconcept.com/"
+
+  - title: "Media & Comms"
+    links:
+      - name: "Gmail"
+        url: "https://mail.google.com"
+      - name: "Slack"
+        url: "https://app.slack.com"
+      - name: "YouTube"
+        url: "https://youtube.com"

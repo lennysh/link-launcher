@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Link Launcher</title>
+    <!-- 1. Tailwind CSS for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- 2. js-yaml library to parse the YAML file -->
+    <script src="https://cdn.jsdelivr.net/npm/js-yaml@4.1.0/dist/js-yaml.min.js"></script>
+    <style>
+        /* Simple transition for button hover */
+        .btn {
+            @apply px-4 py-2 rounded-lg text-white font-semibold transition-all duration-200 ease-in-out;
+        }
+        .btn-blue {
+            @apply bg-blue-600 hover:bg-blue-700 shadow-md;
+        }
+        .btn-green {
+            @apply bg-green-600 hover:bg-green-700 shadow-sm;
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-gray-100 font-sans min-h-screen">
+
+    <div class="container max-w-4xl mx-auto p-4 md:p-8">
+        
+        <header class="mb-8">
+            <h1 class="text-4xl font-bold text-white mb-2">Link Launcher</h1>
+            <p class="text-lg text-gray-400">Your self-hosted link group dashboard.</p>
+        </header>
+
+        <!-- 
+          ******************************************************************
+          * IMPORTANT: POP-UP BLOCKER WARNING
+          ******************************************************************
+        -->
+        <div class="bg-yellow-800 border-l-4 border-yellow-500 text-yellow-100 p-4 rounded-lg mb-8" role="alert">
+            <p class="font-bold">Heads up!</p>
+            <p>Your browser's pop-up blocker will likely prevent the "Open All" buttons from working. Please **allow pop-ups** from this site (`http://localhost:8080`) for the feature to work correctly.</p>
+        </div>
+
+        <!-- Loading State -->
+        <div id="loading-state" class="text-center text-gray-400 text-lg">
+            <p>Loading `links.yaml`...</p>
+        </div>
+
+        <!-- Error State -->
+        <div id="error-state" class="hidden bg-red-800 text-red-100 p-4 rounded-lg">
+            <p class="font-bold">Error loading config:</p>
+            <p id="error-message"></p>
+        </div>
+
+        <!-- App Content: This will be populated by JavaScript -->
+        <main id="app-container" class="hidden grid grid-cols-1 md:grid-cols-2 gap-6"></main>
+
+    </div>
+
+    <script>
+        // Store the parsed data globally for button access
+        let linkData = null;
+
+        document.addEventListener('DOMContentLoaded', () => {
+            loadAndRenderLinks();
+            
+            // Listen for clicks on the main container for event delegation
+            const appContainer = document.getElementById('app-container');
+            appContainer.addEventListener('click', handleAppClick);
+        });
+
+        /**
+         * Fetches and parses the links.yaml file, then renders the app
+         */
+        async function loadAndRenderLinks() {
+            const loadingEl = document.getElementById('loading-state');
+            const errorEl = document.getElementById('error-state');
+            const errorMsgEl = document.getElementById('error-message');
+            const appEl = document.getElementById('app-container');
+
+            try {
+                // 1. Fetch the YAML file
+                const response = await fetch('links.yaml');
+                if (!response.ok) {
+                    throw new Error(`Failed to fetch links.yaml (Status: ${response.status})`);
+                }
+                const yamlText = await response.text();
+
+                // 2. Parse the YAML
+                // 'jsyaml' is available from the CDN script in the <head>
+                linkData = jsyaml.load(yamlText);
+
+                if (!linkData || !linkData.groups) {
+                    throw new Error("YAML file is valid but doesn't contain a 'groups' list.");
+                }
+
+                // 3. Render the application
+                renderApp(linkData.groups);
+
+                // 4. Update UI state
+                loadingEl.classList.add('hidden');
+                appEl.classList.remove('hidden');
+
+            } catch (error) {
+                console.error("Error loading links:", error);
+                errorMsgEl.textContent = error.message;
+                loadingEl.classList.add('hidden');
+                errorEl.classList.remove('hidden');
+            }
+        }
+
+        /**
+         * Renders the link groups and cards into the DOM
+         * @param {Array} groups - The array of groups from the YAML file
+         */
+        function renderApp(groups) {
+            const appEl = document.getElementById('app-container');
+            appEl.innerHTML = ''; // Clear any previous content
+
+            if (groups.length === 0) {
+                appEl.innerHTML = `<p class="text-gray-400 col-span-2">No link groups found in 'links.yaml'.</p>`;
+                return;
+            }
+
+            groups.forEach((group, groupIndex) => {
+                // Create the group card
+                const card = document.createElement('div');
+                card.className = 'bg-gray-800 shadow-lg rounded-lg p-6 flex flex-col';
+                
+                let linksHtml = '';
+                if (group.links && group.links.length > 0) {
+                    linksHtml = group.links.map(link => `
+                        <li class="mb-2">
+                            <a href="${link.url}" target="_blank" rel="noopener noreferrer" 
+                               class="text-blue-400 hover:text-blue-300 hover:underline truncate" 
+                               title="${link.url}">
+                                ${link.name}
+                            </a>
+                        </li>
+                    `).join('');
+                } else {
+                    linksHtml = '<li class="text-gray-500">No links in this group.</li>';
+                }
+
+                card.innerHTML = `
+                    <div class="flex-grow">
+                        <h2 class="text-2xl font-bold text-white mb-4">${group.title}</h2>
+                        <ul class="list-disc list-inside space-y-1 mb-6">
+                            ${linksHtml}
+                        </ul>
+                    </div>
+                    <div class="mt-4">
+                        <button class="btn btn-blue open-all-btn w-full" data-group-index="${groupIndex}">
+                            Open All Links in Group
+                        </button>
+                    </div>
+                `;
+                
+                appEl.appendChild(card);
+            });
+        }
+
+        /**
+         * Handles clicks within the app container (event delegation)
+         */
+        function handleAppClick(event) {
+            const target = event.target;
+
+            // Check if an "Open All" button was clicked
+            if (target.classList.contains('open-all-btn')) {
+                const groupIndex = target.getAttribute('data-group-index');
+                
+                if (linkData && linkData.groups[groupIndex]) {
+                    const linksToOpen = linkData.groups[groupIndex].links;
+                    
+                    if (linksToOpen && linksToOpen.length > 0) {
+                        console.log(`Opening ${linksToOpen.length} links for group '${linkData.groups[groupIndex].title}'...`);
+                        linksToOpen.forEach((link, i) => {
+                            // This will be blocked by pop-up blockers!
+                            window.open(link.url, '_blank');
+                        });
+                    } else {
+                        console.warn('No links to open in this group.');
+                    }
+                }
+            }
+        }
+
+    </script>
+</body>
+</html>

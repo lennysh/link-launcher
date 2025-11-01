@@ -8,7 +8,28 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- 2. js-yaml library to parse the YAML file -->
     <script src="https://cdn.jsdelivr.net/npm/js-yaml@4.1.0/dist/js-yaml.min.js"></script>
+    
+    <!-- 
+      ******************************************************************
+      * FIX: Added a plain CSS block for the dark mode background.
+      * This ensures the dark mode loads immediately and reliably.
+      ******************************************************************
+    -->
     <style>
+        body {
+            /* This is Tailwind's gray-900 and gray-100 */
+            background-color: #111827; 
+            color: #f3f4f6;
+        }
+    </style>
+    
+    <!-- 
+      ******************************************************************
+      * FIX: Added type="text/tailwindcss" to the style tag.
+      * This is required for the @apply directives to work.
+      ******************************************************************
+    -->
+    <style type="text/tailwindcss">
         /* Simple transition for button hover */
         .btn {
             @apply px-4 py-2 rounded-lg text-white font-semibold transition-all duration-200 ease-in-out;
@@ -19,15 +40,35 @@
         .btn-green {
             @apply bg-green-600 hover:bg-green-700 shadow-sm;
         }
+        /* This class will be applied by the body tag for Tailwind */
+        body {
+            @apply font-sans min-h-screen;
+        }
     </style>
 </head>
+<!-- 
+  The classes here will be processed by the Tailwind CDN and override
+  the default styles above, ensuring fonts etc. are applied.
+-->
 <body class="bg-gray-900 text-gray-100 font-sans min-h-screen">
 
     <div class="container max-w-4xl mx-auto p-4 md:p-8">
         
         <header class="mb-8">
             <h1 class="text-4xl font-bold text-white mb-2">Link Launcher</h1>
-            <p class="text-lg text-gray-400">Your self-hosted link group dashboard.</p>
+            <p class="text-lg text-gray-400 mb-6">Your self-hosted link group dashboard.</p>
+            
+            <!-- 
+              ******************************************************************
+              * NEW: Search Bar
+              ******************************************************************
+            -->
+            <input
+                type="search"
+                id="search-bar"
+                placeholder="Search titles, names, or URLs..."
+                class="w-full px-4 py-2 rounded-lg bg-gray-700 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
         </header>
 
         <!-- 
@@ -49,6 +90,11 @@
         <div id="error-state" class="hidden bg-red-800 text-red-100 p-4 rounded-lg">
             <p class="font-bold">Error loading config:</p>
             <p id="error-message"></p>
+        </div>
+
+        <!-- No Results State (for search) -->
+        <div id="no-results" class="hidden text-center text-gray-400 text-lg">
+            <p>No results found.</p>
         </div>
 
         <!-- App Content: This will be populated by JavaScript -->
@@ -100,6 +146,9 @@
                 loadingEl.classList.add('hidden');
                 appEl.classList.remove('hidden');
 
+                // 5. NEW: Add search event listener
+                document.getElementById('search-bar').addEventListener('input', handleSearch);
+
             } catch (error) {
                 console.error("Error loading links:", error);
                 errorMsgEl.textContent = error.message;
@@ -117,14 +166,18 @@
             appEl.innerHTML = ''; // Clear any previous content
 
             if (groups.length === 0) {
-                appEl.innerHTML = `<p class="text-gray-400 col-span-2">No link groups found in 'links.yaml'.</p>`;
+                appEl.innerHTML = `<p class="text-gray-400 col-span-2 text-center">No link groups found in 'links.yaml'.</p>`;
                 return;
             }
 
             groups.forEach((group, groupIndex) => {
                 // Create the group card
                 const card = document.createElement('div');
-                card.className = 'bg-gray-800 shadow-lg rounded-lg p-6 flex flex-col';
+                
+                // NEW: Add a unique ID and a class for searching
+                card.id = `group-card-${groupIndex}`;
+                // The styling for the card itself is all inline, so it was never broken.
+                card.className = 'bg-gray-800 shadow-lg rounded-lg p-6 flex flex-col link-group-card'; 
                 
                 let linksHtml = '';
                 if (group.links && group.links.length > 0) {
@@ -149,6 +202,10 @@
                         </ul>
                     </div>
                     <div class="mt-4">
+                        <!-- 
+                          This button's styling (btn, btn-blue) will now work 
+                          because the <style> tag has the correct type.
+                        -->
                         <button class="btn btn-blue open-all-btn w-full" data-group-index="${groupIndex}">
                             Open All Links in Group
                         </button>
@@ -160,6 +217,46 @@
         }
 
         /**
+         * NEW: Handles filtering the visible link groups based on search query
+         */
+        function handleSearch(event) {
+            const query = event.target.value.toLowerCase();
+            const noResultsEl = document.getElementById('no-results');
+            let hasVisibleCards = false;
+
+            if (!linkData || !linkData.groups) return;
+
+            linkData.groups.forEach((group, index) => {
+                const card = document.getElementById(`group-card-${index}`);
+                if (!card) return; // Safety check
+
+                // Check for match in title
+                const titleMatch = group.title.toLowerCase().includes(query);
+                
+                // Check for match in any link name or URL
+                const linkMatch = group.links.some(link => 
+                    link.name.toLowerCase().includes(query) || 
+                    link.url.toLowerCase().includes(query)
+                );
+
+                if (titleMatch || linkMatch) {
+                    card.classList.remove('hidden');
+                    hasVisibleCards = true;
+                } else {
+                    card.classList.add('hidden');
+                }
+            });
+
+            // Show or hide the "No results" message
+            if (hasVisibleCards) {
+                noResultsEl.classList.add('hidden');
+            } else {
+                noResultsEl.classList.remove('hidden');
+            }
+        }
+
+
+        /**
          * Handles clicks within the app container (event delegation)
          */
         function handleAppClick(event) {
@@ -167,6 +264,8 @@
 
             // Check if an "Open All" button was clicked
             if (target.classList.contains('open-all-btn')) {
+                // This logic remains unchanged, as it correctly references
+                // the original group index from the global linkData.
                 const groupIndex = target.getAttribute('data-group-index');
                 
                 if (linkData && linkData.groups[groupIndex]) {
@@ -188,3 +287,4 @@
     </script>
 </body>
 </html>
+

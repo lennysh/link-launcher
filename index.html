@@ -35,10 +35,11 @@
             @apply bg-gray-700 text-gray-300 hover:bg-gray-600;
         }
         .tag-btn-active {
-            /* MODIFIED: Groups are active with Indigo, Tags with Blue */
+            /* Groups are active with Indigo */
             @apply bg-indigo-600 text-white font-medium ring-2 ring-indigo-400 ring-offset-2 ring-offset-gray-900;
         }
         .tag-btn-active-tag {
+             /* Tags are active with Blue */
              @apply bg-blue-600 text-white font-medium ring-2 ring-blue-400 ring-offset-2 ring-offset-gray-900;
         }
         .tag-btn-hidden {
@@ -139,7 +140,7 @@
         // Store filter states globally
         let allTags = new Set();
         let activeTags = new Set();
-        let allGroups = new Set(); // NEW: Will hold group *names*
+        let allGroups = new Set(); // Will hold group *names*
         let activeGroups = new Set();
         
         let currentSort = 'custom';
@@ -207,7 +208,7 @@
                 linkData.links.forEach(link => {
                     link.tags?.forEach(tag => allTags.add(tag));
                 });
-                // NEW: Get group names from the group definitions
+                // Get group names from the group definitions
                 linkData.groups.forEach(group => {
                     if (group.name) {
                         allGroups.add(group.name);
@@ -264,7 +265,7 @@
         }
 
         /**
-         * NEW: Creates all group pill DOM elements one time on load
+         * Creates all group pill DOM elements one time on load
          */
         function createGroupPills() {
             const groupContainer = document.getElementById('group-pills-container');
@@ -278,7 +279,7 @@
             }
             
             groupFilterContainer.classList.remove('hidden');
-            // NEW: Sort by name from the allGroups Set
+            // Sort by name from the allGroups Set
             const sortedGroups = Array.from(allGroups).sort((a, b) => a.localeCompare(b));
             
             sortedGroups.forEach(groupName => {
@@ -300,7 +301,7 @@
                 const isAvailable = availableTags.has(tag);
 
                 if (isActive) {
-                    // NEW: Added specific active class for tags
+                    // Added specific active class for tags
                     button.className = 'tag-btn tag-btn-active-tag';
                 } else if (isAvailable) {
                     button.className = 'tag-btn tag-btn-inactive';
@@ -311,7 +312,7 @@
         }
 
         /**
-         * NEW: Updates the visibility and state of group pills based on filtered links
+         * Updates the visibility and state of group pills based on filtered links
          */
         function updateGroupPills(availableGroups) {
              for (const groupName in groupButtonElements) {
@@ -331,21 +332,47 @@
         }
 
         /**
-         * NEW: Helper function to check if a link matches a group definition
+         * Helper function to check if a link matches a "smart group" definition
          */
         function linkMatchesGroup(link, groupDef) {
             const linkTags = new Set(link.tags || []);
-            const includes = groupDef.include_tags || [];
-            const excludes = groupDef.exclude_tags || [];
+            
+            // Helper to check a list of keywords against a link property
+            const checkList = (list, linkProp, isInclude) => {
+                if (!list || list.length === 0) return true;
+                // Ensure link[linkProp] is a string before calling .toLowerCase()
+                const linkValue = (link[linkProp] || '').toLowerCase();
+                
+                if (isInclude) {
+                    // AND logic: must match ALL keywords
+                    return list.every(keyword => linkValue.includes(keyword.toLowerCase()));
+                } else {
+                    // NOT logic: must match NONE of the keywords
+                    return list.every(keyword => !linkValue.includes(keyword.toLowerCase()));
+                }
+            };
 
-            // Check for inclusion (must have ALL)
-            const hasAllIncludes = includes.every(tag => linkTags.has(tag));
-            if (!hasAllIncludes) return false;
+            // Check for tag inclusions (must have ALL)
+            const includeTags = groupDef.include_tags || [];
+            if (!includeTags.every(tag => linkTags.has(tag))) return false;
 
-            // Check for exclusion (must have NONE)
-            const hasNoExcludes = excludes.every(tag => !linkTags.has(tag));
-            if (!hasNoExcludes) return false;
+            // Check for tag exclusions (must have NONE)
+            const excludeTags = groupDef.exclude_tags || [];
+            if (!excludeTags.every(tag => !linkTags.has(tag))) return false;
 
+            // Check for name inclusions (must have ALL)
+            if (!checkList(groupDef.include_names, 'name', true)) return false;
+
+            // Check for name exclusions (must have NONE)
+            if (!checkList(groupDef.exclude_names, 'name', false)) return false;
+
+            // Check for url inclusions (must have ALL)
+            if (!checkList(groupDef.include_urls, 'url', true)) return false;
+
+            // Check for url exclusions (must have NONE)
+            if (!checkList(groupDef.exclude_urls, 'url', false)) return false;
+
+            // If it passed all checks, it's a match
             return true;
         }
 
@@ -363,8 +390,12 @@
             let searchFilteredLinks = [...linkData.links];
             if (currentQuery) {
                 searchFilteredLinks = searchFilteredLinks.filter(link => {
-                    const nameMatch = link.name.toLowerCase().includes(currentQuery);
-                    const urlMatch = link.url.toLowerCase().includes(currentQuery);
+                    /* **********************************************************
+                     * FIX: Add (link.name || '') and (link.url || '') to
+                     * prevent .toLowerCase() on undefined.
+                     ***********************************************************/
+                    const nameMatch = (link.name || '').toLowerCase().includes(currentQuery);
+                    const urlMatch = (link.url || '').toLowerCase().includes(currentQuery);
                     return nameMatch || urlMatch;
                 });
             }
@@ -378,7 +409,7 @@
                 });
             }
 
-            // 3. NEW: Filter by Active Groups (OR logic on definitions)
+            // 3. Filter by Active Groups (OR logic on definitions)
             let finalFilteredLinks = [...tagsFilteredLinks];
             if (activeGroups.size > 0) {
                 const activeGroupDefs = linkData.groups.filter(g => activeGroups.has(g.name));
@@ -390,10 +421,7 @@
             }
             
             // 4. Calculate available tags and groups
-            // Available groups are calculated from the search/tag filtered list
-            // Available tags are calculated from the search/group filtered list
-            
-            // NEW: Calculate which groups are available *after* search+tag filters
+            // Calculate which groups are available *after* search+tag filters
             const availableGroups = new Set();
             const allGroupDefs = linkData.groups || [];
             tagsFilteredLinks.forEach(link => {
@@ -405,7 +433,7 @@
                 });
             });
 
-            // NEW: Calculate which groups-filtered links to use for tag faceting
+            // Calculate which groups-filtered links to use for tag faceting
             let groupsFilteredLinks = [...searchFilteredLinks];
             if (activeGroups.size > 0) {
                  const activeGroupDefs = linkData.groups.filter(g => activeGroups.has(g.name));
@@ -414,7 +442,7 @@
                 });
             }
 
-            // NEW: Calculate available tags *after* search+group filters
+            // Calculate available tags *after* search+group filters
             const availableTags = new Set();
             groupsFilteredLinks.forEach(link => {
                 link.tags?.forEach(tag => availableTags.add(tag));
@@ -427,7 +455,7 @@
             // 6. Sort the filtered links
             let sortedLinks = [...finalFilteredLinks];
             if (currentSort === 'az') {
-                sortedLinks.sort((a, b) => a.name.localeCompare(b.name));
+                sortedLinks.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
             }
             
             // 7. Store the filtered links for the "Open All" button
@@ -465,7 +493,6 @@
             };
             
             const linksHtml = links.map(link => {
-                // REMOVED: Groups are no longer a direct property of links
                 
                 let tagsHtml = '';
                 if (link.tags && Array.isArray(link.tags)) {
@@ -487,12 +514,11 @@
                         <a href="${link.url}" target="_blank" rel="noopener noreferrer" 
                            class="text-blue-400 hover:text-blue-300 text-base truncate block" 
                            title="${link.name}">
-                            ${link.name}
+                            ${link.name || 'Missing Name'}
                         </a>
                         <p class="text-gray-400 text-xs truncate" title="${link.url}">
-                            ${link.url}
+                            ${link.url || 'Missing URL'}
                         </p>
-                        <!-- REMOVED: Groups display div -->
                         <div class="mt-2 flex flex-wrap gap-1 ${tagsHtml ? '' : 'hidden'}">
                             ${tagsHtml}
                         </div>
@@ -541,7 +567,7 @@
         }
 
         /**
-         * NEW: Handles group button clicks for filtering
+         * Handles group button clicks for filtering
          */
         function handleGroupClick(event) {
             const target = event.target.closest('.tag-btn');

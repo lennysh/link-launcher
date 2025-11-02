@@ -3,27 +3,67 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Link Launcher</title>
+    <title>Link Launcher (Dynamic)</title>
     <!-- 1. Tailwind CSS for styling -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- 2. js-yaml library to parse the YAML file -->
+    <!-- 2. js-yaml library (still needed for server) -->
     <script src="https://cdn.jsdelivr.net/npm/js-yaml@4.1.0/dist/js-yaml.min.js"></script>
     
     <style>
         body {
-            /* This is Tailwind's gray-900 and gray-100 */
             background-color: #111827; 
             color: #f3f4f6;
         }
+        /* Base styles can go here, but @apply rules must be in the block below */
     </style>
     
     <style type="text/tailwindcss">
+        /* --- Modal styles moved here --- */
+        .modal-backdrop {
+            @apply fixed inset-0 bg-black bg-opacity-75 transition-opacity duration-300 ease-in-out;
+        }
+        .modal-content {
+            @apply fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-gray-800 rounded-lg shadow-xl p-6 w-full max-w-lg transition-all duration-300 ease-in-out scale-95;
+        }
+        .modal-visible {
+            @apply pointer-events-auto; /* Make visible modal interactive */
+        }
+        .modal-visible .modal-backdrop {
+            @apply opacity-100;
+        }
+        .modal-visible .modal-content {
+            @apply opacity-100 scale-100;
+        }
+        .modal-hidden {
+            @apply pointer-events-none; /* Make hidden modal non-interactive */
+        }
+        .modal-hidden .modal-backdrop {
+            @apply opacity-0;
+        }
+        .modal-hidden .modal-content {
+            @apply opacity-0 scale-95;
+        }
+        /* --- End modal styles --- */
+
         .btn {
-            @apply px-4 py-2 rounded-lg text-white font-semibold transition-all duration-200 ease-in-out;
+            @apply px-4 py-2 rounded-lg text-white font-semibold transition-all duration-200 ease-in-out disabled:opacity-50 disabled:cursor-not-allowed;
         }
         .btn-blue {
             @apply bg-blue-600 hover:bg-blue-700 shadow-md;
         }
+        .btn-green {
+            @apply bg-green-600 hover:bg-green-700 shadow-md;
+        }
+        .btn-red {
+            @apply bg-red-600 hover:bg-red-700 shadow-md;
+        }
+        .btn-gray {
+            @apply bg-gray-600 hover:bg-gray-700;
+        }
+        .btn-link {
+            @apply p-1 text-gray-400 hover:text-white;
+        }
+
         body {
             @apply font-sans min-h-screen;
         }
@@ -35,24 +75,64 @@
             @apply bg-gray-700 text-gray-300 hover:bg-gray-600;
         }
         .tag-btn-active {
-            /* Groups are active with Indigo */
             @apply bg-indigo-600 text-white font-medium ring-2 ring-indigo-400 ring-offset-2 ring-offset-gray-900;
         }
         .tag-btn-active-tag {
-             /* Tags are active with Blue */
              @apply bg-blue-600 text-white font-medium ring-2 ring-blue-400 ring-offset-2 ring-offset-gray-900;
         }
         .tag-btn-hidden {
             @apply hidden;
         }
+        
+        /* Styling for link items to show admin buttons */
+        .link-item .link-content {
+            @apply w-10/12;
+        }
+        .admin-buttons {
+            @apply w-2/12 flex justify-end gap-2;
+        }
     </style>
 </head>
 <body class="bg-gray-900 text-gray-100 font-sans min-h-screen">
 
+    <!-- Modal for Add/Edit Link -->
+    <!-- This starts with .modal-hidden, which now correctly has pointer-events-none -->
+    <div id="link-modal" class="modal-hidden fixed inset-0 z-50 overflow-hidden" aria-labelledby="modal-title" role="dialog" aria-modal="true">
+        <div class="modal-backdrop"></div>
+        <div class="modal-content">
+            <h3 class="text-lg font-medium leading-6 text-white mb-4" id="modal-title">Add New Link</h3>
+            <form id="link-form">
+                <input type="hidden" id="original-url" />
+                <div class="space-y-4">
+                    <div>
+                        <label for="link-name" class="block text-sm font-medium text-gray-300">Name</label>
+                        <input type="text" id="link-name" required class="mt-1 block w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+                    </div>
+                    <div>
+                        <label for="link-url" class="block text-sm font-medium text-gray-300">URL</label>
+                        <input type="url" id="link-url" required class="mt-1 block w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+                    </div>
+                    <div>
+                        <label for="link-tags" class="block text-sm font-medium text-gray-300">Tags (comma-separated)</label>
+                        <input type="text" id="link-tags" class="mt-1 block w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+                    </div>
+                </div>
+                <div class="mt-6 flex justify-end gap-3">
+                    <button type="button" id="modal-cancel-btn" class="btn btn-gray">Cancel</button>
+                    <button type="submit" id="modal-save-btn" class="btn btn-blue">Save</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    <!-- End Modal -->
+
     <div class="container max-w-7xl mx-auto p-4 md:p-8">
         
         <header class="mb-8">
-            <h1 class="text-4xl font-bold text-white mb-2">Link Launcher</h1>
+            <div class="flex justify-between items-center mb-2">
+                <h1 class="text-4xl font-bold text-white">Link Launcher</h1>
+            </div>
+            
             <p class="text-lg text-gray-400 mb-6">Your self-hosted link dashboard.</p>
             
             <input
@@ -62,13 +142,19 @@
                 class="w-full px-4 py-2 rounded-lg bg-gray-700 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
 
-            <div class="mt-4">
+            <div class="mt-4 flex justify-between items-center gap-4">
                 <div>
                     <label for="sort-select" class="block text-sm font-medium text-gray-400">Sort links by:</label>
                     <select id="sort-select" class="mt-1 block w-full pl-3 pr-10 py-2 text-base bg-gray-700 border-gray-600 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md text-white">
                         <option value="custom">Custom Order (default)</option>
                         <option value="az">A-Z (by name)</option>
                     </select>
+                </div>
+                <div class="admin-controls flex self-end">
+                    <button id="show-add-modal-btn" class="btn btn-green">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 inline-block -mt-1 mr-1" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clip-rule="evenodd" /></svg>
+                        Add New Link
+                    </button>
                 </div>
             </div>
             
@@ -87,11 +173,11 @@
         
                 <div class="bg-yellow-800 border-l-4 border-yellow-500 text-yellow-100 p-4 rounded-lg mb-8" role="alert">
                     <p class="font-bold">Heads up!</p>
-                    <p>Your browser's pop-up blocker will likely prevent the "Open All" button from working. Please **allow pop-ups** from this site (`http://localhost:8080`) for the feature to work correctly.</p>
+                    <p>Your browser's pop-up blocker will likely prevent the "Open All" button from working. Please **allow pop-ups** from this site for the feature to work correctly.</p>
                 </div>
         
                 <div id="loading-state" class="text-center text-gray-400 text-lg">
-                    <p>Loading `links.yaml`...</p>
+                    <p>Loading data from server...</p>
                 </div>
         
                 <div id="error-state" class="hidden bg-red-800 text-red-100 p-4 rounded-lg">
@@ -149,16 +235,141 @@
         let tagButtonElements = {};
         let groupButtonElements = {};
 
+        // === NEW: API Helper ===
+        /**
+         * Generic helper for making API requests to the backend
+         * @param {string} endpoint The API endpoint (e.g., '/api/links')
+         * @param {string} method The HTTP method (GET, POST, PUT, DELETE)
+         * @param {object} [body] The JSON data to send (for POST, PUT, DELETE)
+         * @returns {Promise<object>} The JSON response from the server
+         */
+        async function apiRequest(endpoint, method = 'GET', body = null) {
+            const options = {
+                method,
+                headers: {},
+            };
+
+            if (body) {
+                options.headers['Content-Type'] = 'application/json';
+                options.body = JSON.stringify(body);
+            }
+
+            try {
+                const response = await fetch(endpoint, options);
+                
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.error || `Server error: ${response.status}`);
+                }
+                
+                // For 201 (Created) or 200 (OK) with JSON response
+                if (response.status === 201 || response.status === 200) {
+                     // Handle 204 No Content for DELETE
+                    if (response.headers.get("content-length") === "0") {
+                        return { message: "Success" };
+                    }
+                    try {
+                        return await response.json();
+                    } catch (e) {
+                        return { message: "Success, no JSON body."};
+                    }
+                }
+                return { message: 'Operation successful.' }; // For other success codes like 204
+            } catch (error) {
+                console.error(`API request failed: ${method} ${endpoint}`, error);
+                showGlobalError(error.message);
+                throw error; // Re-throw to stop promise chain
+            }
+        }
+
+        /**
+         * Shows a global error message (e.g., for API failures)
+         * @param {string} message The error message to display
+         */
+        function showGlobalError(message) {
+            const errorEl = document.getElementById('error-state');
+            const errorMsgEl = document.getElementById('error-message');
+            errorMsgEl.textContent = message;
+            errorEl.classList.remove('hidden');
+            // Hide after 5 seconds
+            setTimeout(() => {
+                errorEl.classList.add('hidden');
+            }, 5000);
+        }
+
+        // === NEW: Modal Controls ===
+        const modal = document.getElementById('link-modal');
+        const modalTitle = document.getElementById('modal-title');
+        const modalCancelBtn = document.getElementById('modal-cancel-btn');
+        const linkForm = document.getElementById('link-form');
+        const formOriginalUrl = document.getElementById('original-url');
+        const formName = document.getElementById('link-name');
+        const formUrl = document.getElementById('link-url');
+        const formTags = document.getElementById('link-tags');
+
+        function showModal(title, link = null) {
+            modalTitle.textContent = title;
+            if (link) {
+                // Edit mode
+                formOriginalUrl.value = link.url;
+                formName.value = link.name;
+                formUrl.value = link.url;
+                formTags.value = (link.tags || []).join(', ');
+            } else {
+                // Add mode
+                linkForm.reset();
+                formOriginalUrl.value = '';
+            }
+            modal.classList.remove('modal-hidden');
+            modal.classList.add('modal-visible');
+        }
+
+        function hideModal() {
+            modal.classList.add('modal-hidden');
+            modal.classList.remove('modal-visible');
+            linkForm.reset();
+        }
+
+        // === Event Listeners ===
         document.addEventListener('DOMContentLoaded', () => {
             loadAndRenderLinks();
             
             document.getElementById('open-all-filtered-btn').addEventListener('click', handleOpenAllFiltered);
             document.getElementById('tag-pills-container').addEventListener('click', handleTagClick);
             document.getElementById('group-pills-container').addEventListener('click', handleGroupClick);
+
+            // Modal listeners
+            document.getElementById('show-add-modal-btn').addEventListener('click', () => {
+                showModal('Add New Link');
+            });
+            modalCancelBtn.addEventListener('click', hideModal);
+            linkForm.addEventListener('submit', handleFormSubmit);
+
+            // Listener for dynamic Edit/Delete buttons
+            document.getElementById('app-container').addEventListener('click', (e) => {
+                const deleteBtn = e.target.closest('.delete-link-btn');
+                if (deleteBtn) {
+                    const url = deleteBtn.dataset.url;
+                    // Use a simple confirm dialog for now.
+                    // Note: This was in the original code, but for a real app, a custom modal is better.
+                    if (window.confirm(`Are you sure you want to delete this link?\n${url}`)) {
+                        handleDeleteLink(url);
+                    }
+                }
+
+                const editBtn = e.target.closest('.edit-link-btn');
+                if (editBtn) {
+                    const url = editBtn.dataset.url;
+                    const linkToEdit = linkData.links.find(l => l.url === url);
+                    if (linkToEdit) {
+                        showModal('Edit Link', linkToEdit);
+                    }
+                }
+            });
         });
 
         /**
-         * Fetches and parses the links.yaml file, then renders the app
+         * Fetches and parses the link data, then renders the app
          */
         async function loadAndRenderLinks() {
             const loadingEl = document.getElementById('loading-state');
@@ -180,27 +391,16 @@
             sortSelect.value = currentSort;
 
             try {
-                // 1. Fetch the YAML file with cache-busting
-                const response = await fetch('links.yaml', {
-                    cache: 'no-store',
-                    headers: { 'Cache-Control': 'no-cache', 'Pragma': 'no-cache' }
-                });
-                if (!response.ok) {
-                    throw new Error(`Failed to fetch links.yaml (Status: ${response.status})`);
-                }
-                const yamlText = await response.text();
-
-                // 2. Parse the YAML
-                linkData = jsyaml.load(yamlText);
+                // 1. Fetch the data from the API
+                linkData = await apiRequest('/api/data', 'GET');
 
                 if (!linkData || !linkData.links) {
-                    throw new Error("YAML file is valid but doesn't contain a 'links' list.");
+                    throw new Error("Data from server is valid but doesn't contain a 'links' list.");
                 }
                 // Ensure linkData.groups exists, even if empty
                 if (!linkData.groups) {
                     linkData.groups = [];
                 }
-
 
                 // 3. Discover all tags and groups
                 allTags.clear();
@@ -208,7 +408,6 @@
                 linkData.links.forEach(link => {
                     link.tags?.forEach(tag => allTags.add(tag));
                 });
-                // Get group names from the group definitions
                 linkData.groups.forEach(group => {
                     if (group.name) {
                         allGroups.add(group.name);
@@ -301,7 +500,6 @@
                 const isAvailable = availableTags.has(tag);
 
                 if (isActive) {
-                    // Added specific active class for tags
                     button.className = 'tag-btn tag-btn-active-tag';
                 } else if (isAvailable) {
                     button.className = 'tag-btn tag-btn-inactive';
@@ -321,7 +519,6 @@
                 const isAvailable = availableGroups.has(groupName);
 
                 if (isActive) {
-                    // Active class for groups
                     button.className = 'tag-btn tag-btn-active';
                 } else if (isAvailable) {
                     button.className = 'tag-btn tag-btn-inactive';
@@ -331,38 +528,21 @@
             }
         }
         
-        /**
-         * NEW: Helper to check if a link property matches ANY keyword in a list.
-         * @param {string[]} list - The list of keywords (e.g., ['github', 'ansible'])
-         * @param {string} linkProp - The property of the link to check ('name', 'url', 'tags')
-         * @param {object} link - The link object
-         */
         function checkList(list, linkProp, link) {
-            if (!list || list.length === 0) return false; // No rules, so no match
+            if (!list || list.length === 0) return false; 
 
             if (linkProp === 'tags') {
                 const linkTags = new Set(link.tags || []);
-                // Does ANY tag in the list exist in the link's tags? (OR)
                 return list.some(tag => linkTags.has(tag));
             } else {
-                // 'name' or 'url'
                 const linkValue = (link[linkProp] || '').toLowerCase();
-                // Does ANY keyword in the list exist in the link's value? (OR)
                 return list.some(keyword => linkValue.includes(keyword.toLowerCase()));
             }
         }
 
-
-        /**
-         * NEW: Revamped helper function to check if a link matches a "smart group" definition
-         */
         function linkMatchesGroup(link, groupDef) {
-            
-            // 1. Check INCLUDES (must match ALL blocks)
             const includeBlocks = groupDef.include || [];
             const allIncludesMatch = includeBlocks.every(block => {
-                // block = { tags: ['a'], names: ['b'] }
-                // Must match AT LEAST ONE rule in the block (OR)
                 return checkList(block.tags, 'tags', link) ||
                        checkList(block.names, 'name', link) ||
                        checkList(block.urls, 'url', link);
@@ -370,11 +550,8 @@
 
             if (!allIncludesMatch) return false;
 
-            // 2. Check EXCLUDES (must match NO blocks)
             const excludeBlocks = groupDef.exclude || [];
             const anyExcludeMatches = excludeBlocks.some(block => {
-                // block = { tags: ['d'] }
-                // Must match AT LEAST ONE rule in the block (OR)
                 return checkList(block.tags, 'tags', link) ||
                        checkList(block.names, 'name', link) ||
                        checkList(block.urls, 'url', link);
@@ -382,7 +559,6 @@
 
             if (anyExcludeMatches) return false;
             
-            // 3. If passed both, it's a match
             return true;
         }
 
@@ -421,25 +597,22 @@
                 const activeGroupDefs = linkData.groups.filter(g => activeGroups.has(g.name));
                 
                 finalFilteredLinks = tagsFilteredLinks.filter(link => {
-                    // Return true if the link matches *any* of the active group definitions
                     return activeGroupDefs.some(groupDef => linkMatchesGroup(link, groupDef));
                 });
             }
             
             // 4. Calculate available tags and groups
-            // Calculate which groups are available *after* search+tag filters
             const availableGroups = new Set();
             const allGroupDefs = linkData.groups || [];
             tagsFilteredLinks.forEach(link => {
                 allGroupDefs.forEach(groupDef => {
-                    if (availableGroups.has(groupDef.name)) return; // Already know this group is available
+                    if (availableGroups.has(groupDef.name)) return; 
                     if (linkMatchesGroup(link, groupDef)) {
                         availableGroups.add(groupDef.name);
                     }
                 });
             });
 
-            // Calculate which groups-filtered links to use for tag faceting
             let groupsFilteredLinks = [...searchFilteredLinks];
             if (activeGroups.size > 0) {
                  const activeGroupDefs = linkData.groups.filter(g => activeGroups.has(g.name));
@@ -448,7 +621,6 @@
                 });
             }
 
-            // Calculate available tags *after* search+group filters
             const availableTags = new Set();
             groupsFilteredLinks.forEach(link => {
                 link.tags?.forEach(tag => availableTags.add(tag));
@@ -508,15 +680,18 @@
                     ).join('');
                 }
 
+                // URL-encode the link URL to safely use in data attributes
+                const encodedUrl = CSS.escape(link.url);
+
                 return `
-                <li class="flex items-center p-3 hover:bg-gray-700 transition-colors duration-150">
+                <li class="link-item flex items-center p-3 hover:bg-gray-700 transition-colors duration-150">
                     <img 
                         src="https://www.google.com/s2/favicons?domain=${getHostname(link.url)}&sz=32" 
                         alt="favicon" 
                         class="w-5 h-5 mr-3 rounded-sm flex-shrink-0"
                         onerror="this.style.display='none'"
                     >
-                    <div class="flex-1 truncate min-w-0">
+                    <div class="link-content flex-1 truncate min-w-0">
                         <a href="${link.url}" target="_blank" rel="noopener noreferrer" 
                            class="text-blue-400 hover:text-blue-300 text-base truncate block" 
                            title="${link.name}">
@@ -528,6 +703,15 @@
                         <div class="mt-2 flex flex-wrap gap-1 ${tagsHtml ? '' : 'hidden'}">
                             ${tagsHtml}
                         </div>
+                    </div>
+                    <!-- Admin Buttons -->
+                    <div class="admin-buttons ml-auto">
+                        <button classf="edit-link-btn btn-link" data-url="${link.url}" title="Edit Link">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path d="M17.414 2.586a2 2 0 00-2.828 0L7 10.172V13h2.828l7.586-7.586a2 2 0 000-2.828z" /><path fill-rule="evenodd" d="M2 6a2 2 0 012-2h4a1 1 0 010 2H4v10h10v-4a1 1 0 112 0v4a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" clip-rule="evenodd" /></svg>
+                        </button>
+                        <button class="delete-link-btn btn-link text-red-400 hover:text-red-300" data-url="${link.url}" title="Delete Link">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm4 0a1 1 0 012 0v6a1 1 0 11-2 0V8z" clip-rule="evenodd" /></svg>
+                        </button>
                     </div>
                 </li>
                 `;
@@ -601,6 +785,58 @@
                 });
             } else {
                 console.warn('No filtered links to open.');
+            }
+        }
+
+        // === NEW: CRUD Handlers ===
+
+        /**
+         * Handles the Add/Edit form submission
+         */
+        async function handleFormSubmit(e) {
+            e.preventDefault();
+            const originalUrl = formOriginalUrl.value;
+            
+            const link = {
+                name: formName.value,
+                url: formUrl.value,
+                tags: formTags.value.split(',')
+                                 .map(tag => tag.trim())
+                                 .filter(tag => tag.length > 0)
+            };
+            
+            // Disable button
+            document.getElementById('modal-save-btn').disabled = true;
+
+            try {
+                if (originalUrl) {
+                    // Edit Mode
+                    await apiRequest('/api/links', 'PUT', { originalUrl, updatedLink: link });
+                } else {
+                    // Add Mode
+                    await apiRequest('/api/links', 'POST', link);
+                }
+                
+                hideModal();
+                await loadAndRenderLinks(); // Reload all data from server
+            } catch (error) {
+                // Error is already shown by apiRequest helper
+                console.error("Failed to save link:", error);
+            } finally {
+                // Re-enable button
+                document.getElementById('modal-save-btn').disabled = false;
+            }
+        }
+
+        /**
+         * Handles deleting a link
+         */
+        async function handleDeleteLink(url) {
+            try {
+                await apiRequest('/api/links', 'DELETE', { url });
+                await loadAndRenderLinks(); // Reload all data from server
+            } catch (error) {
+                console.error("Failed to delete link:", error);
             }
         }
 

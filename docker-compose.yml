@@ -1,14 +1,16 @@
 version: '3.8'
 services:
   web:
-    image: nginx:alpine
-    container_name: link_launcher
+    # Build the image from the Dockerfile in the current directory
+    build: .
+    container_name: link_launcher_dynamic
     ports:
-      - "8080:80" # Access the app at http://localhost:8080
+      - "8080:8080" # The Node.js server runs on port 8080
     volumes:
-      # Mount the app files into the Nginx web root
-      - ./app/index.html:/usr/share/nginx/html/index.html
-      - ./app/links.yaml:/usr/share/nginx/html/links.yaml
+      # Mount the 'app' directory to persist links.yaml changes
+      # This ensures that when the server writes to /usr/src/app/app/links.yaml,
+      # it's actually writing to the ./app/links.yaml file on your host machine.
+      - ./app:/usr/src/app/app
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true

@@ -44,11 +44,6 @@
 </head>
 <body class="bg-gray-900 text-gray-100 font-sans min-h-screen">
 
-    <!-- 
-      ******************************************************************
-      * MODIFIED: Changed max-w-4xl to max-w-7xl for a wider layout
-      ******************************************************************
-    -->
     <div class="container max-w-7xl mx-auto p-4 md:p-8">
         
         <header class="mb-8">
@@ -72,74 +67,66 @@
                 </div>
             </div>
             
-            <!-- 
-              ******************************************************************
-              * MOVED: Tag filter container is no longer in the header
-              * MOVED: "Open All" button is no longer in the header
-              ******************************************************************
-            -->
-
         </header>
 
-        <!-- 
-          ******************************************************************
-          * NEW: Main 2-column grid layout
-          ******************************************************************
-        -->
         <div class="grid grid-cols-1 md:grid-cols-4 gap-8">
             
-            <!-- NEW: Left Column for main content -->
+            <!-- Left Column for main content -->
             <div class="md:col-span-3">
                 
-                <!-- MOVED: "Open All" button -->
                 <div class="mb-8">
                     <button id="open-all-filtered-btn" class="btn btn-blue w-full">
                         Open All Filtered Links
                     </button>
                 </div>
         
-                <!-- MOVED: Pop-up warning -->
                 <div class="bg-yellow-800 border-l-4 border-yellow-500 text-yellow-100 p-4 rounded-lg mb-8" role="alert">
                     <p class="font-bold">Heads up!</p>
                     <p>Your browser's pop-up blocker will likely prevent the "Open All" button from working. Please **allow pop-ups** from this site (`http://localhost:8080`) for the feature to work correctly.</p>
                 </div>
         
-                <!-- MOVED: Loading State -->
                 <div id="loading-state" class="text-center text-gray-400 text-lg">
                     <p>Loading `links.yaml`...</p>
                 </div>
         
-                <!-- MOVED: Error State -->
                 <div id="error-state" class="hidden bg-red-800 text-red-100 p-4 rounded-lg">
                     <p class="font-bold">Error loading config:</p>
                     <p id="error-message"></p>
                 </div>
         
-                <!-- MOVED: No Results State -->
                 <div id="no-results" class="hidden text-center text-gray-400 text-lg">
                     <p>No results found.</p>
                 </div>
         
-                <!-- MOVED: Main app container for links -->
                 <main id="app-container" class="hidden bg-gray-800 shadow-lg rounded-lg overflow-hidden">
                     <!-- Link list will be rendered here -->
                 </main>
 
             </div>
 
-            <!-- NEW: Right Column for Tag Sidebar -->
+            <!-- Right Column for Tag Sidebar -->
             <div class="md:col-span-1">
-                <!-- NEW: Sticky container to keep sidebar visible on scroll -->
-                <div class="sticky top-8">
+                <div class="sticky top-8 space-y-6">
                     <!-- 
                       ******************************************************************
-                      * MOVED: Tag filter container
-                      * MODIFIED: Added card styling and scrollable list
+                      * NEW: Group Filter Container
+                      ******************************************************************
+                    -->
+                    <div id="group-filter-container" class="hidden bg-gray-800 rounded-lg p-4">
+                        <label class="block text-sm font-medium text-gray-400 mb-3">Filter by Groups:</label>
+                        <div id="group-pills-container" class="flex flex-wrap gap-2 max-h-[35vh] overflow-y-auto">
+                            <!-- Group buttons will be dynamically inserted here -->
+                        </div>
+                    </div>
+                    
+                    <!-- 
+                      ******************************************************************
+                      * MODIFIED: Tag Filter Container (added max-height)
                       ******************************************************************
                     -->
                     <div id="tag-filter-container" class="hidden bg-gray-800 rounded-lg p-4">
                         <label class="block text-sm font-medium text-gray-400 mb-3">Filter by Tags:</label>
-                        <div id="tag-pills-container" class="flex flex-wrap gap-2 max-h-[70vh] overflow-y-auto">
+                        <div id="tag-pills-container" class="flex flex-wrap gap-2 max-h-[35vh] overflow-y-auto">
                             <!-- Tag buttons will be dynamically inserted here -->
                         </div>
                     </div>
@@ -158,16 +145,21 @@
         // Store filter states globally
         let allTags = new Set();
         let activeTags = new Set();
+        let allGroups = new Set(); // NEW
+        let activeGroups = new Set(); // NEW
+        
         let currentSort = 'custom';
         let currentQuery = '';
         
         let tagButtonElements = {};
+        let groupButtonElements = {}; // NEW
 
         document.addEventListener('DOMContentLoaded', () => {
             loadAndRenderLinks();
             
             document.getElementById('open-all-filtered-btn').addEventListener('click', handleOpenAllFiltered);
             document.getElementById('tag-pills-container').addEventListener('click', handleTagClick);
+            document.getElementById('group-pills-container').addEventListener('click', handleGroupClick); // NEW
         });
 
         /**
@@ -186,6 +178,7 @@
             currentQuery = localStorage.getItem('linkLauncherQuery') || '';
             currentSort = localStorage.getItem('linkLauncherSort') || 'custom';
             activeTags = new Set(JSON.parse(localStorage.getItem('linkLauncherTags') || '[]'));
+            activeGroups = new Set(JSON.parse(localStorage.getItem('linkLauncherGroups') || '[]')); // NEW
 
             // Apply restored values to inputs
             searchInput.value = currentQuery;
@@ -209,16 +202,17 @@
                     throw new Error("YAML file is valid but doesn't contain a 'links' list.");
                 }
 
-                // 3. Discover all tags
+                // 3. Discover all tags and groups
                 allTags.clear();
+                allGroups.clear(); // NEW
                 linkData.links.forEach(link => {
-                    if (link.tags && Array.isArray(link.tags)) {
-                        link.tags.forEach(tag => allTags.add(tag));
-                    }
+                    link.tags?.forEach(tag => allTags.add(tag));
+                    link.groups?.forEach(group => allGroups.add(group)); // NEW
                 });
                 
-                // 4. Create tag pill elements ONCE
+                // 4. Create tag and group pill elements ONCE
                 createTagPills();
+                createGroupPills(); // NEW
 
                 // 5. Render the application
                 renderApp(); 
@@ -245,16 +239,15 @@
         function createTagPills() {
             const tagContainer = document.getElementById('tag-pills-container');
             const tagFilterContainer = document.getElementById('tag-filter-container');
-            tagContainer.innerHTML = ''; // Clear old tags
-            tagButtonElements = {}; // Clear old elements
+            tagContainer.innerHTML = '';
+            tagButtonElements = {};
             
             if (allTags.size === 0) {
                 tagFilterContainer.classList.add('hidden');
-                return; // No tags to render
+                return;
             }
             
             tagFilterContainer.classList.remove('hidden');
-            
             const sortedTags = Array.from(allTags).sort((a, b) => a.localeCompare(b));
             
             sortedTags.forEach(tag => {
@@ -262,7 +255,33 @@
                 button.textContent = tag;
                 button.setAttribute('data-tag', tag);
                 tagContainer.appendChild(button);
-                tagButtonElements[tag] = button; // Store reference
+                tagButtonElements[tag] = button;
+            });
+        }
+
+        /**
+         * NEW: Creates all group pill DOM elements one time on load
+         */
+        function createGroupPills() {
+            const groupContainer = document.getElementById('group-pills-container');
+            const groupFilterContainer = document.getElementById('group-filter-container');
+            groupContainer.innerHTML = '';
+            groupButtonElements = {};
+            
+            if (allGroups.size === 0) {
+                groupFilterContainer.classList.add('hidden');
+                return;
+            }
+            
+            groupFilterContainer.classList.remove('hidden');
+            const sortedGroups = Array.from(allGroups).sort((a, b) => a.localeCompare(b));
+            
+            sortedGroups.forEach(group => {
+                const button = document.createElement('button');
+                button.textContent = group;
+                button.setAttribute('data-group', group);
+                groupContainer.appendChild(button);
+                groupButtonElements[group] = button;
             });
         }
         
@@ -274,6 +293,25 @@
                 const button = tagButtonElements[tag];
                 const isActive = activeTags.has(tag);
                 const isAvailable = availableTags.has(tag);
+
+                if (isActive) {
+                    button.className = 'tag-btn tag-btn-active';
+                } else if (isAvailable) {
+                    button.className = 'tag-btn tag-btn-inactive';
+                } else {
+                    button.className = 'tag-btn tag-btn-hidden';
+                }
+            }
+        }
+
+        /**
+         * NEW: Updates the visibility and state of group pills based on filtered links
+         */
+        function updateGroupPills(availableGroups) {
+             for (const group in groupButtonElements) {
+                const button = groupButtonElements[group];
+                const isActive = activeGroups.has(group);
+                const isAvailable = availableGroups.has(group);
 
                 if (isActive) {
                     button.className = 'tag-btn tag-btn-active';
@@ -306,34 +344,47 @@
                 });
             }
             
-            // 2. Filter by Active Tags
-            let finalFilteredLinks = [...searchFilteredLinks];
+            // 2. Filter by Active Tags (AND logic)
+            let tagsFilteredLinks = [...searchFilteredLinks];
             if (activeTags.size > 0) {
-                finalFilteredLinks = finalFilteredLinks.filter(link => {
+                tagsFilteredLinks = tagsFilteredLinks.filter(link => {
                     if (!link.tags || !Array.isArray(link.tags)) return false;
                     return Array.from(activeTags).every(activeTag => link.tags.includes(activeTag));
                 });
             }
+
+            // 3. NEW: Filter by Active Groups (OR logic)
+            let finalFilteredLinks = [...tagsFilteredLinks];
+            if (activeGroups.size > 0) {
+                finalFilteredLinks = finalFilteredLinks.filter(link => {
+                    if (!link.groups || !Array.isArray(link.groups)) return false;
+                    // Return true if *any* of the link's groups are in the activeGroups set
+                    return link.groups.some(group => activeGroups.has(group));
+                });
+            }
             
-            // 3. Calculate available tags based on the *final* filtered list
+            // 4. Calculate available tags and groups based on the *final* filtered list
             const availableTags = new Set();
+            const availableGroups = new Set();
             finalFilteredLinks.forEach(link => {
                 link.tags?.forEach(tag => availableTags.add(tag));
+                link.groups?.forEach(group => availableGroups.add(group));
             });
             
-            // 4. Update the tag pill UI
+            // 5. Update the tag and group pill UI
             updateTagPills(availableTags);
+            updateGroupPills(availableGroups);
 
-            // 5. Sort the filtered links
+            // 6. Sort the filtered links
             let sortedLinks = [...finalFilteredLinks];
             if (currentSort === 'az') {
                 sortedLinks.sort((a, b) => a.name.localeCompare(b.name));
             }
             
-            // 6. Store the filtered links for the "Open All" button
+            // 7. Store the filtered links for the "Open All" button
             currentlyFilteredLinks = sortedLinks;
             
-            // 7. Render the final list
+            // 8. Render the final list
             if (sortedLinks.length > 0) {
                 renderLinkList(sortedLinks);
                 noResultsEl.classList.add('hidden');
@@ -343,7 +394,7 @@
                 appEl.classList.add('hidden'); // Hide the <main> element
             }
             
-            // 8. Update the "Open All" button text
+            // 9. Update the "Open All" button text
             const openAllBtn = document.getElementById('open-all-filtered-btn');
             openAllBtn.textContent = `Open All Filtered Links (${currentlyFilteredLinks.length})`;
             openAllBtn.disabled = currentlyFilteredLinks.length === 0;
@@ -365,9 +416,16 @@
             };
             
             const linksHtml = links.map(link => {
+                let groupsHtml = ''; // NEW
+                if (link.groups && Array.isArray(link.groups)) {
+                    const sortedLinkGroups = [...link.groups].sort((a, b) => a.localeCompare(b));
+                    groupsHtml = sortedLinkGroups.map(group => 
+                        `<span class="bg-indigo-600 text-indigo-100 text-xs font-medium mr-2 px-2.5 py-0.5 rounded-full">${group}</span>`
+                    ).join('');
+                }
+                
                 let tagsHtml = '';
                 if (link.tags && Array.isArray(link.tags)) {
-                    // NEW: Sort tags alphabetically before rendering
                     const sortedLinkTags = [...link.tags].sort((a, b) => a.localeCompare(b));
                     tagsHtml = sortedLinkTags.map(tag => 
                         `<span class="bg-gray-600 text-gray-300 text-xs font-medium mr-2 px-2.5 py-0.5 rounded-full">${tag}</span>`
@@ -391,6 +449,10 @@
                         <p class="text-gray-400 text-xs truncate" title="${link.url}">
                             ${link.url}
                         </p>
+                        <!-- NEW: Groups display -->
+                        <div class="mt-2 flex flex-wrap gap-1 ${groupsHtml ? '' : 'hidden'}">
+                            ${groupsHtml}
+                        </div>
                         <div class="mt-2 flex flex-wrap gap-1 ${tagsHtml ? '' : 'hidden'}">
                             ${tagsHtml}
                         </div>
@@ -435,6 +497,24 @@
             }
             
             localStorage.setItem('linkLauncherTags', JSON.stringify(Array.from(activeTags)));
+            renderApp();
+        }
+
+        /**
+         * NEW: Handles group button clicks for filtering
+         */
+        function handleGroupClick(event) {
+            const target = event.target.closest('.tag-btn');
+            if (!target) return;
+            
+            const group = target.getAttribute('data-group');
+            if (activeGroups.has(group)) {
+                activeGroups.delete(group);
+            } else {
+                activeGroups.add(group);
+            }
+            
+            localStorage.setItem('linkLauncherGroups', JSON.stringify(Array.from(activeGroups)));
             renderApp();
         }
 

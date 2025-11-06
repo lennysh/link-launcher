@@ -27,7 +27,7 @@
             @apply fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-gray-800 rounded-lg shadow-xl p-6 w-full max-w-lg transition-all duration-300 ease-in-out scale-95;
         }
         .modal-visible {
-            @apply pointer-events-auto; /* Make visible modal interactive */
+            @apply pointer-events-auto z-50; /* Make visible modal interactive */
         }
         .modal-visible .modal-backdrop {
             @apply opacity-100;
@@ -97,8 +97,7 @@
 <body class="bg-gray-900 text-gray-100 font-sans min-h-screen">
 
     <!-- Modal for Add/Edit Link -->
-    <!-- This starts with .modal-hidden, which now correctly has pointer-events-none -->
-    <div id="link-modal" class="modal-hidden fixed inset-0 z-50 overflow-hidden" aria-labelledby="modal-title" role="dialog" aria-modal="true">
+    <div id="link-modal" class="modal-hidden fixed inset-0 overflow-hidden" aria-labelledby="modal-title" role="dialog" aria-modal="true">
         <div class="modal-backdrop"></div>
         <div class="modal-content">
             <h3 class="text-lg font-medium leading-6 text-white mb-4" id="modal-title">Add New Link</h3>
@@ -126,6 +125,23 @@
         </div>
     </div>
     <!-- End Modal -->
+
+    <!-- NEW: Confirmation Modal -->
+    <div id="confirm-modal" class="modal-hidden fixed inset-0 overflow-hidden" aria-labelledby="confirm-modal-title" role="dialog" aria-modal="true">
+        <div class="modal-backdrop"></div>
+        <div class="modal-content">
+            <h3 class="text-lg font-medium leading-6 text-white mb-4" id="confirm-modal-title">Are you sure?</h3>
+            <div id="confirm-modal-body" class="text-gray-300 mb-6">
+                <!-- Confirmation message will be injected here -->
+            </div>
+            <div class="mt-6 flex justify-end gap-3">
+                <button type="button" id="confirm-modal-cancel-btn" class="btn btn-gray">Cancel</button>
+                <button type="button" id="confirm-modal-ok-btn" class="btn btn-red">OK</button>
+            </div>
+        </div>
+    </div>
+    <!-- End Confirmation Modal -->
+
 
     <div class="container max-w-7xl mx-auto p-4 md:p-8">
         
@@ -178,6 +194,12 @@
                     <p class="font-bold">Heads up!</p>
                     <p>Your browser's pop-up blocker will likely prevent the "Open All" button from working. Please **allow pop-ups** from this site for the feature to work correctly.</p>
                 </div>
+
+                <!-- NEW: Warning for too many tabs -->
+                <div id="tab-limit-warning" class="bg-red-800 border-l-4 border-red-500 text-red-100 p-4 rounded-lg mb-8 hidden" role="alert">
+                    <p class="font-bold">Too Many Tabs</p>
+                    <p id="tab-limit-message"></p>
+                </div>
         
                 <div id="loading-state" class="text-center text-gray-400 text-lg">
                     <p>Loading data from server...</p>
@@ -223,8 +245,9 @@
 
     <script>
         // Store the parsed data globally
-        let linkData = null; // Will hold { links: [], groups: [] }
+        let linkData = null; // Will hold { config: {}, links: [], groups: [] }
         let currentlyFilteredLinks = [];
+        let maxTabsOpen = 20; // Default safety limit
         
         // Store filter states globally
         let allTags = new Set();
@@ -238,7 +261,7 @@
         let tagButtonElements = {};
         let groupButtonElements = {};
 
-        // === NEW: API Helper ===
+        // === API Helper ===
         /**
          * Generic helper for making API requests to the backend
          * @param {string} endpoint The API endpoint (e.g., '/api/links')
@@ -300,7 +323,7 @@
             }, 5000);
         }
 
-        // === NEW: Modal Controls ===
+        // === Modal Controls ===
         const modal = document.getElementById('link-modal');
         const modalTitle = document.getElementById('modal-title');
         const modalCancelBtn = document.getElementById('modal-cancel-btn');
@@ -333,14 +356,62 @@
             linkForm.reset();
         }
 
-        // === REMOVED Pop-up Checker ===
-        // The check on page load was unreliable.
-        // Logic is now inside handleOpenAllFiltered.
+        // --- NEW: Confirmation Modal Logic ---
+        const confirmModal = document.getElementById('confirm-modal');
+        const confirmModalTitle = document.getElementById('confirm-modal-title');
+        const confirmModalBody = document.getElementById('confirm-modal-body');
+        const confirmModalCancelBtn = document.getElementById('confirm-modal-cancel-btn');
+        const confirmModalOkBtn = document.getElementById('confirm-modal-ok-btn');
+
+        /**
+         * Shows a confirmation modal.
+         * @param {string} title The title for the modal.
+         * @param {string} bodyHTML The HTML content for the modal body.
+         * @param {string} okButtonText The text for the confirmation button (e.g., "Delete").
+         * @param {string} okButtonClass The Tailwind class for the OK button (e.g., "btn-red").
+         * @returns {Promise<boolean>} A promise that resolves to true if OK was clicked, false if Cancel was.
+         */
+        function showConfirmation(title, bodyHTML, okButtonText = 'OK', okButtonClass = 'btn-red') {
+            return new Promise((resolve) => {
+                confirmModalTitle.textContent = title;
+                confirmModalBody.innerHTML = bodyHTML;
+                confirmModalOkBtn.textContent = okButtonText;
+                
+                // Reset OK button classes and apply new one
+                confirmModalOkBtn.className = `btn ${okButtonClass}`;
+
+                confirmModal.classList.remove('modal-hidden');
+                confirmModal.classList.add('modal-visible');
+
+                // Remove old listeners to prevent duplicates
+                const newOkBtn = confirmModalOkBtn.cloneNode(true);
+                confirmModalOkBtn.parentNode.replaceChild(newOkBtn, confirmModalOkBtn);
+                
+                const newCancelBtn = confirmModalCancelBtn.cloneNode(true);
+                confirmModalCancelBtn.parentNode.replaceChild(newCancelBtn, confirmModalCancelBtn);
+
+                // Add new listeners
+                newOkBtn.addEventListener('click', () => {
+                    hideConfirmation();
+                    resolve(true);
+                });
+
+                newCancelBtn.addEventListener('click', () => {
+                    hideConfirmation();
+                    resolve(false);
+                });
+            });
+        }
+
+        function hideConfirmation() {
+            confirmModal.classList.add('modal-hidden');
+            confirmModal.classList.remove('modal-visible');
+        }
+        // --- End Confirmation Modal Logic ---
         
         // === Event Listeners ===
         document.addEventListener('DOMContentLoaded', () => {
             loadAndRenderLinks();
-            // checkPopupBlocker(); // <-- REMOVED THIS CALL
             
             document.getElementById('open-all-filtered-btn').addEventListener('click', handleOpenAllFiltered);
             document.getElementById('tag-pills-container').addEventListener('click', handleTagClick);
@@ -358,11 +429,8 @@
                 const deleteBtn = e.target.closest('.delete-link-btn');
                 if (deleteBtn) {
                     const url = deleteBtn.dataset.url;
-                    // Use a simple confirm dialog for now.
-                    // Note: This was in the original code, but for a real app, a custom modal is better.
-                    if (window.confirm(`Are you sure you want to delete this link?\n${url}`)) {
-                        handleDeleteLink(url);
-                    }
+                    // REPLACED window.confirm
+                    handleDeleteLink(url);
                 }
 
                 const editBtn = e.target.closest('.edit-link-btn');
@@ -405,11 +473,21 @@
                 if (!linkData || !linkData.links) {
                     throw new Error("Data from server is valid but doesn't contain a 'links' list.");
                 }
+                
+                // --- NEW: Read config section ---
+                if (linkData.config && linkData.config.max_tabs_open) {
+                    maxTabsOpen = parseInt(linkData.config.max_tabs_open, 10) || 20;
+                    console.log(`Max tabs open limit set to: ${maxTabsOpen}`);
+                } else {
+                    console.warn(`No 'config.max_tabs_open' found in links.yaml. Defaulting to ${maxTabsOpen}.`);
+                }
+                // --- End new section ---
+
                 // Ensure linkData.groups exists, even if empty
                 if (!linkData.groups) {
                     linkData.groups = [];
                 }
-
+                
                 // 3. Discover all tags and groups
                 allTags.clear();
                 allGroups.clear();
@@ -430,7 +508,6 @@
                 renderApp(); 
 
                 // 6. Update UI state
-                loadingEl.classList.add('hidden');
                 appEl.classList.remove('hidden'); // This is now the <main> element
 
                 // 7. Add event listeners
@@ -440,8 +517,10 @@
             } catch (error) {
                 console.error("Error loading links:", error);
                 errorMsgEl.textContent = error.message;
-                loadingEl.classList.add('hidden');
                 errorEl.classList.remove('hidden');
+            } finally {
+                // NEW: This will ALWAYS run, ensuring the spinner is hidden
+                loadingEl.classList.add('hidden');
             }
         }
         
@@ -578,6 +657,8 @@
 
             const appEl = document.getElementById('app-container');
             const noResultsEl = document.getElementById('no-results');
+            const tabLimitWarningEl = document.getElementById('tab-limit-warning');
+            const tabLimitMessageEl = document.getElementById('tab-limit-message');
             appEl.innerHTML = ''; // Clear previous content
             
             // 1. Filter by Search Query
@@ -653,14 +734,29 @@
                 noResultsEl.classList.add('hidden');
                 appEl.classList.remove('hidden'); // Show the <main> element
             } else {
-                noResultsEl.classList.remove('hidden');
+                noResultsEl.classList.add('hidden');
                 appEl.classList.add('hidden'); // Hide the <main> element
             }
             
             // 9. Update the "Open All" button text
             const openAllBtn = document.getElementById('open-all-filtered-btn');
-            openAllBtn.textContent = `Open All Filtered Links (${currentlyFilteredLinks.length})`;
-            openAllBtn.disabled = currentlyFilteredLinks.length === 0;
+            const linkCount = currentlyFilteredLinks.length;
+            openAllBtn.textContent = `Open All Filtered Links (${linkCount})`;
+            openAllBtn.disabled = linkCount === 0;
+
+            // --- NEW: Show warning if filtered count is over the limit ---
+            if (linkCount > maxTabsOpen) {
+                tabLimitMessageEl.textContent = `The current filter matches ${linkCount} tabs, which is over your safety limit of ${maxTabsOpen}. The "Open All" button will ask for confirmation.`;
+                tabLimitWarningEl.classList.remove('hidden');
+                openAllBtn.classList.add('btn-red'); // Make button red as a warning
+                openAllBtn.classList.remove('btn-blue');
+            } else {
+                tabLimitWarningEl.classList.add('hidden');
+                openAllBtn.classList.remove('btn-red');
+                openAllBtn.classList.add('btn-blue');
+            }
+            // --- End new section ---
+
             if (openAllBtn.disabled) {
                 openAllBtn.classList.add('opacity-50', 'cursor-not-allowed');
             } else {
@@ -785,34 +881,52 @@
         /**
          * Handles click on the main "Open All Filtered" button
          */
-        function handleOpenAllFiltered() {
-            const popupWarning = document.getElementById('popup-warning'); // Get warning element
-            if (currentlyFilteredLinks && currentlyFilteredLinks.length > 0) {
-                console.log(`Opening ${currentlyFilteredLinks.length} filtered links...`);
-                let popupBlocked = false;
-                
-                currentlyFilteredLinks.forEach((link, i) => {
-                    // Try to open a link
-                    const newWindow = window.open(link.url, '_blank', 'noopener,noreferrer');
-                    // Check if it failed (null, undefined, or blocked)
-                    if (!newWindow || newWindow.closed || typeof newWindow.closed === 'undefined') {
-                        popupBlocked = true;
-                    }
-                });
+        async function handleOpenAllFiltered() {
+            const popupWarning = document.getElementById('popup-warning');
+            const linkCount = currentlyFilteredLinks.length;
 
-                // After the loop, if any window failed, show the warning.
-                if (popupBlocked) {
-                    popupWarning.classList.remove('hidden');
-                } else {
-                    popupWarning.classList.add('hidden');
-                }
-            } else {
+            if (linkCount === 0) {
                 console.warn('No filtered links to open.');
-                popupWarning.classList.add('hidden'); // Also hide if no links
+                popupWarning.classList.add('hidden');
+                return;
+            }
+            
+            // --- NEW: Check against maxTabsOpen limit ---
+            if (linkCount > maxTabsOpen) {
+                const confirmationMessage = `This will attempt to open <strong>${linkCount} tabs</strong>, which is more than your safety limit of ${maxTabsOpen}.<br><br>Are you sure you want to continue?`;
+                
+                const confirmed = await showConfirmation(
+                    'Too Many Tabs', 
+                    confirmationMessage, 
+                    'Open All', 
+                    'btn-red'
+                );
+
+                if (!confirmed) {
+                    console.log('User cancelled opening multiple tabs.');
+                    return; // Stop execution if user clicks 'Cancel'
+                }
+            }
+            // --- End new section ---
+
+            console.log(`Opening ${linkCount} filtered links...`);
+            let popupBlocked = false;
+            
+            currentlyFilteredLinks.forEach((link, i) => {
+                const newWindow = window.open(link.url, '_blank', 'noopener,noreferrer');
+                if (!newWindow || newWindow.closed || typeof newWindow.closed === 'undefined') {
+                    popupBlocked = true;
+                }
+            });
+
+            if (popupBlocked) {
+                popupWarning.classList.remove('hidden');
+            } else {
+                popupWarning.classList.add('hidden');
             }
         }
 
-        // === NEW: CRUD Handlers ===
+        // === CRUD Handlers ===
 
         /**
          * Handles the Add/Edit form submission
@@ -856,6 +970,21 @@
          * Handles deleting a link
          */
         async function handleDeleteLink(url) {
+            // Find the link name for a better confirmation message
+            const linkToDelete = linkData.links.find(l => l.url === url);
+            const linkName = linkToDelete ? linkToDelete.name : url;
+
+            const confirmed = await showConfirmation(
+                'Delete Link?',
+                `Are you sure you want to delete this link?<br><br><strong class="text-white">${linkName}</strong><br><span class="text-xs text-gray-400">${url}</span>`,
+                'Delete',
+                'btn-red'
+            );
+
+            if (!confirmed) {
+                return;
+            }
+
             try {
                 await apiRequest('/api/links', 'DELETE', { url });
                 await loadAndRenderLinks(); // Reload all data from server
